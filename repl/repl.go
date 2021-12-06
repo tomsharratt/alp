@@ -6,7 +6,7 @@ import (
 	"io"
 
 	"github.com/tomsharratt/alp/lexer"
-	"github.com/tomsharratt/alp/token"
+	"github.com/tomsharratt/alp/parser"
 )
 
 const PROMT = ">> "
@@ -22,9 +22,21 @@ func Run(in io.Reader, out io.Writer) {
 
 		line := scanner.Text()
 		l := lexer.New(line)
+		p := parser.New(l)
 
-		for t := l.NextToken(); t.Type != token.EOF; t = l.NextToken() {
-			fmt.Fprintf(out, "%+v\n", t)
+		program := p.ParseProgram()
+		if len(p.Errors()) != 0 {
+			printParserErrors(out, p.Errors())
+			continue
 		}
+
+		io.WriteString(out, program.String())
+		io.WriteString(out, "\n")
+	}
+}
+
+func printParserErrors(out io.Writer, errors []string) {
+	for _, msg := range errors {
+		io.WriteString(out, "\t"+msg+"\n")
 	}
 }
