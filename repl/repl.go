@@ -7,6 +7,7 @@ import (
 
 	"github.com/tomsharratt/alp/evaluator"
 	"github.com/tomsharratt/alp/lexer"
+	"github.com/tomsharratt/alp/object"
 	"github.com/tomsharratt/alp/parser"
 )
 
@@ -14,6 +15,7 @@ const PROMT = ">> "
 
 func Run(in io.Reader, out io.Writer) {
 	scanner := bufio.NewScanner(in)
+	env := object.NewEnvironment()
 
 	for {
 		fmt.Fprintf(out, "%s", PROMT)
@@ -31,7 +33,7 @@ func Run(in io.Reader, out io.Writer) {
 			continue
 		}
 
-		evaluated := evaluator.Eval(program)
+		evaluated := evaluator.Eval(program, env)
 		if evaluated != nil {
 			io.WriteString(out, evaluated.Inspect())
 			io.WriteString(out, "\n")
