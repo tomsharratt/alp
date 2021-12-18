@@ -2,6 +2,7 @@ package repl
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 
@@ -23,6 +24,8 @@ func Run(in io.Reader, out io.Writer) {
 			return
 		}
 
+		ctx := context.Background()
+
 		line := scanner.Text()
 		l := lexer.New(line)
 		p := parser.New(l)
@@ -33,8 +36,8 @@ func Run(in io.Reader, out io.Writer) {
 			continue
 		}
 
-		evaluated := evaluator.Eval(program, env)
-		if evaluated != nil {
+		evaluated, err := evaluator.Eval(ctx, program, env)
+		if err == nil && evaluated != nil {
 			io.WriteString(out, evaluated.Inspect())
 			io.WriteString(out, "\n")
 		}

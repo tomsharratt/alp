@@ -1,6 +1,7 @@
 package evaluator
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/tomsharratt/alp/ast"
@@ -13,128 +14,176 @@ var (
 	FALSE = &object.Boolean{Value: false}
 )
 
-func Eval(node ast.Node, env *object.Environment) object.Object {
+func Eval(
+	ctx context.Context,
+	node ast.Node,
+	env *object.Environment,
+) (object.Object, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	switch node := node.(type) {
 	case *ast.Program:
-		return evalProgram(node.Statements, env)
+		return evalProgram(ctx, node.Statements, env)
 	case *ast.BlockStatement:
-		return evalBlockStatement(node, env)
+		return evalBlockStatement(ctx, node, env)
 	case *ast.ReturnStatement:
-		val := Eval(node.ReturnValue, env)
-		if isError(val) {
-			return val
+		val, err := Eval(ctx, node.ReturnValue, env)
+		if err != nil {
+			return nil, err
 		}
-		return &object.ReturnValue{Value: val}
-	case *ast.LetStatement:
-		val := Eval(node.Value, env)
 		if isError(val) {
-			return val
+			return val, nil
+		}
+		return &object.ReturnValue{Value: val}, nil
+	case *ast.LetStatement:
+		val, err := Eval(ctx, node.Value, env)
+		if err != nil {
+			return nil, err
+		}
+		if isError(val) {
+			return val, nil
 		}
 		env.Set(node.Name.Value, val)
 	case *ast.Identifier:
-		return evalIdentifier(node, env)
+		return evalIdentifier(node, env), nil
 	case *ast.ExpressionStatement:
-		return Eval(node.Expression, env)
+		return Eval(ctx, node.Expression, env)
 	case *ast.FunctionLiteral:
 		params := node.Parameters
 		body := node.Body
-		return &object.Function{Parameters: params, Env: env, Body: body}
+		return &object.Function{Parameters: params, Env: env, Body: body}, nil
 	case *ast.IntegerLiteral:
-		return &object.Integer{Value: node.Value}
+		return &object.Integer{Value: node.Value}, nil
 	case *ast.StringLiteral:
-		return &object.String{Value: node.Value}
+		return &object.String{Value: node.Value}, nil
 	case *ast.Boolean:
-		return nativeBoolToBooleanObject(node.Value)
+		return nativeBoolToBooleanObject(node.Value), nil
 	case *ast.ArrayLiteral:
-		elements := evalExpressions(node.Elements, env)
+		elements, err := evalExpressions(ctx, node.Elements, env)
+		if err != nil {
+			return nil, err
+		}
 		if len(elements) == 1 && isError(elements[0]) {
-			return elements[0]
+			return elements[0], nil
 		}
-		return &object.Array{Elements: elements}
+		return &object.Array{Elements: elements}, nil
 	case *ast.HashLiteral:
-		return evalHashLiteral(node, env)
+		return evalHashLiteral(ctx, node, env)
 	case *ast.IndexExpression:
-		left := Eval(node.Left, env)
-		if isError(left) {
-			return left
+		left, err := Eval(ctx, node.Left, env)
+		if err != nil {
+			return nil, err
 		}
-		index := Eval(node.Index, env)
+		if isError(left) {
+			return left, nil
+		}
+		index, err := Eval(ctx, node.Index, env)
+		if err != nil {
+			return nil, err
+		}
 		if isError(index) {
-			return index
+			return index, nil
 		}
-		return evalIndexExpression(left, index)
+		return evalIndexExpression(left, index), nil
 	case *ast.PrefixExpression:
-		right := Eval(node.Right, env)
-		if isError(right) {
-			return right
+		right, err := Eval(ctx, node.Right, env)
+		if err != nil {
+			return nil, err
 		}
-		return evalPrefixExpression(node.Operator, right)
+		if isError(right) {
+			return right, nil
+		}
+		return evalPrefixExpression(node.Operator, right), nil
 	case *ast.InfixExpression:
-		left := Eval(node.Left, env)
+		left, err := Eval(ctx, node.Left, env)
+		if err != nil {
+			return nil, err
+		}
 		if isError(left) {
-			return left
+			return left, nil
 		}
 
-		right := Eval(node.Right, env)
+		right, err := Eval(ctx, node.Right, env)
+		if err != nil {
+			return nil, err
+		}
 		if isError(right) {
-			return right
+			return right, nil
 		}
-		return evalInfixExpression(node.Operator, left, right)
+		return evalInfixExpression(node.Operator, left, right), nil
 	case *ast.IfExpression:
-		return evalIfExpression(node, env)
+		return evalIfExpression(ctx, node, env)
 	case *ast.CallExpression:
-		function := Eval(node.Function, env)
+		function, err := Eval(ctx, node.Function, env)
+		if err != nil {
+			return nil, err
+		}
 		if isError(function) {
-			return function
+			return function, nil
 		}
-		args := evalExpressions(node.Arguments, env)
+		args, err := evalExpressions(ctx, node.Arguments, env)
+		if err != nil {
+			return nil, err
+		}
 		if len(args) == 1 && isError(args[0]) {
-			return args[0]
+			return args[0], nil
 		}
-		return applyFunction(function, args)
+		return applyFunction(ctx, function, args)
 	}
 
-	return nil
+	return nil, nil
 }
 
 func evalProgram(
+	ctx context.Context,
 	statements []ast.Statement,
 	env *object.Environment,
-) object.Object {
+) (object.Object, error) {
 	var result object.Object
+	var err error
 
 	for _, statement := range statements {
-		result = Eval(statement, env)
+		result, err = Eval(ctx, statement, env)
+		if err != nil {
+			return nil, err
+		}
 
 		switch result := result.(type) {
 		case *object.ReturnValue:
-			return result.Value
+			return result.Value, nil
 		case *object.Error:
-			return result
+			return result, nil
 		}
 	}
 
-	return result
+	return result, nil
 }
 
 func evalBlockStatement(
+	ctx context.Context,
 	block *ast.BlockStatement,
 	env *object.Environment,
-) object.Object {
+) (object.Object, error) {
 	var result object.Object
+	var err error
 
 	for _, statement := range block.Statements {
-		result = Eval(statement, env)
+		result, err = Eval(ctx, statement, env)
+		if err != nil {
+			return nil, err
+		}
 
 		if result != nil {
 			rt := result.Type()
 			if rt == object.RETURN_VALUE_OBJ || rt == object.ERROR_OBJ {
-				return result
+				return result, nil
 			}
 		}
 	}
 
-	return result
+	return result, nil
 }
 
 func evalIdentifier(
@@ -252,20 +301,24 @@ func evalStringInfixExpression(
 }
 
 func evalIfExpression(
+	ctx context.Context,
 	ie *ast.IfExpression,
 	env *object.Environment,
-) object.Object {
-	condition := Eval(ie.Condition, env)
+) (object.Object, error) {
+	condition, err := Eval(ctx, ie.Condition, env)
+	if err != nil {
+		return nil, err
+	}
 	if isError(condition) {
-		return condition
+		return condition, nil
 	}
 
 	if isTruthy(condition) {
-		return Eval(ie.Consequence, env)
+		return Eval(ctx, ie.Consequence, env)
 	} else if ie.Alternative != nil {
-		return Eval(ie.Alternative, env)
+		return Eval(ctx, ie.Alternative, env)
 	} else {
-		return NULL
+		return NULL, nil
 	}
 }
 
@@ -309,64 +362,82 @@ func evalHashIndexExpression(hash, index object.Object) object.Object {
 }
 
 func evalExpressions(
+	ctx context.Context,
 	exps []ast.Expression,
 	env *object.Environment,
-) []object.Object {
+) ([]object.Object, error) {
 	var result []object.Object
 
 	for _, e := range exps {
-		evaluated := Eval(e, env)
+		evaluated, err := Eval(ctx, e, env)
+		if err != nil {
+			return nil, err
+		}
 		if isError(evaluated) {
-			return []object.Object{evaluated}
+			return []object.Object{evaluated}, nil
 		}
 		result = append(result, evaluated)
 	}
 
-	return result
+	return result, nil
 }
 
 func evalHashLiteral(
+	ctx context.Context,
 	node *ast.HashLiteral,
 	env *object.Environment,
-) object.Object {
+) (object.Object, error) {
 	pairs := make(map[object.HashKey]object.HashPair)
 
 	for keyNode, valueNode := range node.Pairs {
-		key := Eval(keyNode, env)
+		key, err := Eval(ctx, keyNode, env)
+		if err != nil {
+			return nil, err
+		}
 		if isError(key) {
-			return key
+			return key, nil
 		}
 
 		hashKey, ok := key.(object.Hashable)
 		if !ok {
-			return newError("unusable as hash key: %s", key.Type())
+			return newError("unusable as hash key: %s", key.Type()), nil
 		}
 
-		value := Eval(valueNode, env)
+		value, err := Eval(ctx, valueNode, env)
+		if err != nil {
+			return nil, err
+		}
 		if isError(value) {
-			return value
+			return value, nil
 		}
 
 		hashed := hashKey.HashKey()
 		pairs[hashed] = object.HashPair{Key: key, Value: value}
 	}
 
-	return &object.Hash{Pairs: pairs}
+	return &object.Hash{Pairs: pairs}, nil
 }
 
-func applyFunction(fn object.Object, args []object.Object) object.Object {
+func applyFunction(
+	ctx context.Context,
+	fn object.Object,
+	args []object.Object,
+) (object.Object, error) {
 	switch fn := fn.(type) {
 
 	case *object.Function:
 		extendedEnv := extendFunctionEnv(fn, args)
-		evaluated := Eval(fn.Body, extendedEnv)
-		return unwrapReturnValue(evaluated)
+		evaluated, err := Eval(ctx, fn.Body, extendedEnv)
+		if err != nil {
+			return nil, err
+		}
+		return unwrapReturnValue(evaluated), nil
 
 	case *object.Builtin:
-		return fn.Fn(args...)
+		return fn.Fn(args...), nil
 
 	default:
-		return newError("not a function: %s", fn.Type())
+		return newError("not a function: %s", fn.Type()), nil
 	}
 }
 

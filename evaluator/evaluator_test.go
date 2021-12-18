@@ -1,12 +1,58 @@
 package evaluator
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/tomsharratt/alp/lexer"
 	"github.com/tomsharratt/alp/object"
 	"github.com/tomsharratt/alp/parser"
 )
+
+func TestEvalContextDeadline(t *testing.T) {
+	input := "5 + 5"
+	expectedError := "context deadline exceeded"
+
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now())
+	defer cancel()
+
+	l := lexer.New(input)
+	p := parser.New(l)
+	program := p.ParseProgram()
+	env := object.NewEnvironment()
+
+	obj, err := Eval(ctx, program, env)
+	if obj != nil {
+		t.Errorf("object has wrong value. expected nil got %v", obj)
+	}
+	if err.Error() != expectedError {
+		t.Errorf("error has wrong value. expected '%s' got '%s'",
+			expectedError, err.Error())
+	}
+}
+
+func TestEvalContextCancel(t *testing.T) {
+	input := "5 + 5"
+	expectedError := "context canceled"
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	l := lexer.New(input)
+	p := parser.New(l)
+	program := p.ParseProgram()
+	env := object.NewEnvironment()
+
+	obj, err := Eval(ctx, program, env)
+	if obj != nil {
+		t.Errorf("object has wrong value. expected nil got %v", obj)
+	}
+	if err.Error() != expectedError {
+		t.Errorf("error has wrong value. expected '%s' got '%s'",
+			expectedError, err.Error())
+	}
+}
 
 func TestEvalIntegerExpression(t *testing.T) {
 	tests := []struct {
@@ -501,12 +547,14 @@ func testNullObject(t *testing.T, obj object.Object) bool {
 }
 
 func testEval(input string) object.Object {
+	ctx := context.Background()
 	l := lexer.New(input)
 	p := parser.New(l)
 	program := p.ParseProgram()
 	env := object.NewEnvironment()
 
-	return Eval(program, env)
+	obj, _ := Eval(ctx, program, env)
+	return obj
 }
 
 func testIntegerObject(t *testing.T, obj object.Object, expected int64) bool {
