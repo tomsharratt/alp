@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 
@@ -89,11 +90,15 @@ func New(l *lexer.Lexer) *Parser {
 	return p
 }
 
-func (p *Parser) ParseProgram() *ast.Program {
+func (p *Parser) ParseProgram(ctx context.Context) (*ast.Program, error) {
 	program := &ast.Program{}
 	program.Statements = []ast.Statement{}
 
 	for !p.curTokenIs(token.EOF) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
 		statement := p.parseStatement()
 		if statement != nil {
 			program.Statements = append(program.Statements, statement)
@@ -101,7 +106,7 @@ func (p *Parser) ParseProgram() *ast.Program {
 		p.nextToken()
 	}
 
-	return program
+	return program, nil
 }
 
 func (p *Parser) Errors() []string {

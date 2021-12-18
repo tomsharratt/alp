@@ -14,13 +14,15 @@ func TestEvalContextDeadline(t *testing.T) {
 	input := "5 + 5"
 	expectedError := "context deadline exceeded"
 
-	ctx, cancel := context.WithDeadline(context.Background(), time.Now())
-	defer cancel()
+	ctx := context.Background()
 
 	l := lexer.New(input)
 	p := parser.New(l)
-	program := p.ParseProgram()
+	program, _ := p.ParseProgram(ctx)
 	env := object.NewEnvironment()
+
+	ctx, cancel := context.WithDeadline(ctx, time.Now())
+	defer cancel()
 
 	obj, err := Eval(ctx, program, env)
 	if obj != nil {
@@ -36,13 +38,15 @@ func TestEvalContextCancel(t *testing.T) {
 	input := "5 + 5"
 	expectedError := "context canceled"
 
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	ctx := context.Background()
 
 	l := lexer.New(input)
 	p := parser.New(l)
-	program := p.ParseProgram()
+	program, _ := p.ParseProgram(ctx)
 	env := object.NewEnvironment()
+
+	ctx, cancel := context.WithCancel(ctx)
+	cancel()
 
 	obj, err := Eval(ctx, program, env)
 	if obj != nil {
@@ -550,7 +554,7 @@ func testEval(input string) object.Object {
 	ctx := context.Background()
 	l := lexer.New(input)
 	p := parser.New(l)
-	program := p.ParseProgram()
+	program, _ := p.ParseProgram(ctx)
 	env := object.NewEnvironment()
 
 	obj, _ := Eval(ctx, program, env)
